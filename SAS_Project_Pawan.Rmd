@@ -1,0 +1,391 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r}
+library(lubridate)
+library(tidyverse)
+library(xts)
+library(dplyr)
+library(plotly)
+
+firearm<-read.csv("nics-firearm-background-checks.csv")
+firearm <- as.data.frame(firearm)
+
+
+
+firearm$yearquarter <- as.yearqtr(as.character(firearm$month))
+#firearm_totals <- firearm[,c(2,27,28)]
+firearm_total <- firearm[,c(1,2,27)]
+month_sep <- data.frame(do.call('rbind', strsplit(as.character(firearm_total$month),'-',fixed=TRUE)))
+month_sep
+
+firearm_total$year <- month_sep$X1
+firearm_total$month <- month_sep$X2
+#firearm_total <- firearm_total[,-1]  
+head(firearm_total)  
+firearm_total_copy <- firearm_total
+
+firearm_total_copy$month <- as.numeric(firearm_total_copy$month)
+
+
+firearm_total_copy <- firearm_total_copy %>% group_by(state,year)%>%mutate(quarterlydata= 
+                                                      ifelse((month>=01&month<=03),1,
+                                                             ifelse((month>=04&month<=06),2,
+                                                                    ifelse((month>=07&month<=09),3,
+                                                                          ifelse((month>=10&month<=12),4,4)))))
+
+
+
+firearm_total_copy %>% group_by(state,year,quarterlydata)%>%summarise(total=sum(totals))
+
+firearm_total_copy$totals <- firearm_total_copy$totals/1000
+
+seasonal <- ggplot(firearm_total_copy, aes(x = year, y = totals, group = quarterlydata)) +
+	geom_line(aes(colour = state)) + facet_wrap(~state) +	theme_classic()
+seasonal
+
+
+```
+
+```{r}
+firearm_total_copy
+```
+
+
+
+```{r}
+
+
+
+
+firearm_tot_alb <- subset(firearm_total,state=='Alabama')
+firearm_tot_virgin <- subset(firearm_total,state=='Virginia')
+  
+ft_alb_ts <- ts(firearm_tot_alb[,-1],start=c(1998,11),end=c(2020,2),frequency = 12)
+ft_vir_ts <- ts(firearm_tot_virgin[,-1],start=c(1998,11),end=c(2020,2),frequency = 12)
+
+plot(ft_alb_ts)
+plot(ft_vir_ts)
+holt(ft_alb_ts)
+
+
+##GGPLOT to depict the Firearm Background Checks across all the states from 1998-2020
+
+firearm_trial<-read.csv("nics-firearm-background-checks.csv")
+firearm_trial <- as.data.frame(firearm_trial)
+firearm_trial <- firearm_trial[,c(1,2,27)]
+firearm_trial <- firearm_trial%>%spread(state,totals)
+
+str(firearm_trial)
+
+firearm_trial <- xts(firearm_trial[,-1], order.by=as.Date(paste0(firearm_trial[,1],"-01")))
+temp <-data.frame(index(firearm_trial),stack(as.data.frame(coredata(firearm_trial))))
+temp
+names(temp)[1]<-"Year"
+names(temp)[2]<-"Total_Checks"
+names(temp)[3]<-"State"
+
+ggplot(temp,aes(x=Year,y=Total_Checks,color=State)) + geom_line() + facet_wrap(~State) +
+  theme(axis.text.x=element_text(angle = 90, vjust = 0.5))
+#as.yearmon(firearm_trial$month)
+#xtemp<-filter(temp,State=='Alabama')
+#plot(ts(temp[,-1],start=c(1998,11,1),end=c(2020,2,1),frequency = 12))
+
+```
+
+
+
+
+```{r}
+
+##Divided the states based on regions and  GGPLOT of median of the total firearm background checks 
+#1. Based Each Year and Region
+#2. Based on Each Year and Each State
+
+NE.name <- c("Connecticut","Maine","Massachusetts","New Hampshire","Rhode Island","Vermont","New Jersey",
+             "New York","Pennsylvania")
+
+MW.name <- c("Indiana","Illinois","Michigan","Ohio","Wisconsin","Iowa","Nebraska","Kansas",
+             "North Dakota","Minnesota","South Dakota","Missouri")
+
+S.name <- c("Alabama","Arkansas","Delaware","Florida","Georgia","Kentucky","Louisiana","Maryland",
+            "Mississippi","North Carolina","Oklahoma","South Carolina","Tennessee","Texas",
+            "Virginia","West Virginia","District of Columbia")
+
+W.name <- c("Alaska","Arizona","California","Colorado","Hawaii","Idaho","Montana",
+            "Nevada","New Mexico","Oregon","Utah","Washington","Wyoming","Guam","Mariana Islands",
+            "Virgin Islands","Puerto Rico")
+
+region.list <- list(
+  Northeast=NE.name,
+  Midwest=MW.name,
+  South=S.name,
+  West=W.name)
+
+firearm_total_copy$regions <- sapply(firearm_total_copy$state, 
+                 function(x) names(region.list)[grep(x,region.list)])
+
+firearm_total_copy
+
+fatc <- aggregate(firearm_total_copy$totals,list(firearm_total_copy$year,firearm_total_copy$regions), median)
+names(fatc) <- c("Year","Region","Median_Checks")
+fatc
+
+p<-ggplot(data = fatc, aes(x=Year,y=Median_Checks, color=Region, group=Region))+
+  geom_line()+ theme(axis.text.x=element_text(angle =- 90, vjust = 0.5))
+ggplotly(p)
+
+fatc2 <- aggregate(firearm_total_copy$totals,list(firearm_total_copy$year,firearm_total_copy$state), median)
+names(fatc2) <- c("Year", "State","Median_Checks")
+
+p1 <- ggplot(data = fatc2, aes(x=Year,y=Median_Checks, color=State, group=State))+
+  geom_line() + theme(axis.text.x=element_text(angle =- 90, vjust = 0.5))
+ggplotly(p1)
+
+
+
+#Checking Outliers
+fatc_alb <- subset(firearm_total_copy, state=='Alabama')
+fatc_alb[order(-fatc_alb$totals),]
+
+#Outlier for Alabama
+boxplot.stats(subset(firearm_total_copy,state=='Alabama' )$totals)$out
+#TotalOutlier for countries
+boxplot.stats(subset(firearm_total_copy)$totals)$out
+```
+
+00
+```{r}
+#Outlier for Virginia
+firearm
+boxplot.stats(subset(firearm, state=='Virginia')$totals)$out
+
+#Total NA for each column
+sapply(firearm, function(x) sum(is.na(x)))
+
+str(firearm)
+#Checks for duplicates
+sum(duplicated(firearm))
+#Stats Summary
+summary(firearm)
+```
+
+
+```{r}
+
+# Changing the Format of the month column
+firearm$month <- as.Date(paste0(as.character(firearm[,1]),"-01"), format = "%Y-%m-%d")
+
+firearm_background_chck <- firearm[c(1:7,27)]
+names(firearm_background_chck)[1] <- "Year"
+
+#Firearm Background Checks for Each Year  
+firearm_background_chck_p <- firearm_background_chck %>% group_by(Year)%>%summarise(totals=sum(totals))
+firearm_background_chck_p
+#Firearm Background Checks for Each Year (Mean)
+firearm_background_chck_mean <- firearm_background_chck %>% group_by(Year)%>%summarise(Mean_total= mean(totals))
+firearm_background_chck_mean
+
+#Firearm Background Checks for Each Year
+firearm_background_chck_p_plot <- 
+  ggplot(firearm_background_chck_p, aes(x=Year, y=totals))+
+  geom_line()+geom_point() +
+  theme(axis.line = element_line(size = 2, colour = "grey80")) +
+  labs(title = "Total number of firearm background checks, USA, 1998-2020") +
+  scale_y_continuous(limits=c(0,3500000)) + 
+  theme(plot.background = element_rect(fill = "palegreen")) +
+  theme(panel.background = element_rect(fill = "lightblue",colour = "lightblue",
+  size = 0.5, linetype = "solid"))
+
+ggplotly(firearm_background_chck_p_plot)
+
+#Firearm Background Checks for Each Year (Mean)
+firearm_background_chck_mean_plot <- 
+  ggplot(firearm_background_chck_mean, aes(x=Year, y=Mean_total))+
+  geom_line() +
+  theme(axis.line = element_line(size = 2, colour = "grey80")) +
+  labs(title = "Average number of firearm background checks, USA, 1998-2020") +
+  scale_y_continuous(limits=c(0,99990)) + 
+  theme(plot.background = element_rect(fill = "lightblue")) +
+  theme(panel.background = element_rect(fill = "lightblue",colour = "lightblue",
+  size = 0.5, linetype = "solid"))
+  
+
+ggplotly(firearm_background_chck_mean_plot)
+
+```
+
+
+
+
+
+```{r}
+
+#Analysin on month wise Data
+firearm_background_chck<-firearm_background_chck[order(firearm_background_chck$Year),]
+firearm_background_chck_month <-mutate(firearm_background_chck, month = months(firearm_background_chck$Year))
+
+
+
+
+firearm_background_chck_month <- firearm_background_chck_month %>% group_by(month)%>%summarise(total_checks=sum(totals))
+
+firearm_background_chck_month[order(firearm_background_chck_month$month),]
+
+sort(firearm_background_chck_month$month)
+
+  x1<-ggplot(firearm_background_chck_month, aes(x=month, y= total_checks))+
+    geom_bar(stat="identity", width=0.5,col="yellow") +  
+    labs(title = "firearm background checks per month, USA")+
+    theme(axis.line = element_line(size = 2, colour = "grey80")) +
+    theme(plot.background = element_rect(fill = "palegreen")) +
+    scale_y_continuous(limits=c(0,40000000))+
+    theme(panel.background = element_rect(fill = "lightblue",colour = "lightblue",
+    size = 0.5, linetype = "solid") )+ theme(axis.text.x = element_text(angle = 90))
+  
+ggplotly(x1)
+
+```
+
+```{r}
+firearm_background_chck  <-filter(firearm_background_chck,year ==1999)
+
+years(firearm_background_chck$Year)
+firearm_background_chck$first_year <- format(as.Date(firearm_background_chck$Year, format="%d/%m/%Y"),"%Y")
+
+First_year_totals <- firearm_background_chck %>% filter(first_year=="1999") %>% group_by(state)%>%summarise(first_year_totals=sum(totals))
+
+Present_year_totals <- firearm_background_chck %>% filter(first_year=="2019") %>% group_by(state)%>%summarise(present_year_totals=sum(totals))
+
+First_year_totals
+Present_year_totals
+
+perc_inc<- merge(First_year_totals, Present_year_totals, by=intersect(names(First_year_totals),names(Present_year_totals)))
+
+perc_inc$difference_in_totals<-(perc_inc$present_year_totals - perc_inc$first_year_totals)
+perc_inc[perc_inc$first_year_totals==0,]
+perc_inc$increase_in_percentage <-round((perc_inc$difference_in_totals/perc_inc$first_year_totals),4)*100
+perc_inc
+
+
+```
+
+```{r}
+#perc_inc$increase_in_percentage_new <- factor(perc_inc$increase_in_percentage)
+#perc_inc$increase_in_percentage_new <- cut(perc_inc$increase_in_percentage,c(0,50,100,150,350,1000,30000))
+#alok$increase_in_percentage_new<- perc_inc[order(perc_inc$increase_in_percentage_new),]
+
+
+perc_inc <- filter(perc_inc, (state !="District of Columbia" | state !='Virgin Islands'))
+perc_inc<-perc_inc[perc_inc$state!="District of Columbia",]
+perc_inc<-perc_inc[perc_inc$state!="Virgin Islands",]
+ggplot(perc_inc, aes(x=reorder(state,-increase_in_percentage), y= increase_in_percentage))+
+    geom_bar(stat="identity", width=0.5,col="yellow") +  
+    labs(title = "Increase in Percentage of firearm background checks per month, USA")+
+    theme(axis.line = element_line(size = 2, colour = "grey80")) +
+    theme(plot.background = element_rect(fill = "lightgreen", linetype = )) +
+    scale_y_continuous(limits  =c(0,1600))+
+    theme(panel.background = element_rect(fill = "white",colour = "white",
+    size = 0.5, linetype = "solid") )+ theme(axis.text.x = element_text(angle = 90))
+
+
+ggplot(perc_inc, aes(x=state, y= difference_in_totals))+
+    geom_bar(stat="identity", width=0.5,col="yellow") +  
+    labs(title = "Increase in Percentage of firearm background checks per month, USA")+
+    theme(axis.line = element_line(size = 2, colour = "grey80")) +
+    theme(plot.background = element_rect(fill = "lightgreen")) +
+    scale_y_continuous(limits=c(0,4400000))+
+    theme(panel.background = element_rect(fill = "white",colour = "white",
+    size = 0.5, linetype = "solid") )+ theme(axis.text.x = element_text(angle = 90))
+
+
+#year <- as.numeric(format(firearm_background_chck$Year,'%Y'))
+
+```
+```{r}
+
+library(dygraphs)
+library(xts)          # To make the convertion data-frame / xts format
+library(tidyverse)
+library(lubridate)
+
+firearm_background_chck_p
+
+firearm_background_chck_p$Year <- ymd(firearm_background_chck_p$Year)
+ 
+# Then you can create the xts necessary to use dygraph
+firearm_background_chck_timeseries <- xts(x = (firearm_background_chck_p$totals/10), order.by = firearm_background_chck_p$Year)
+
+# Finally the plot
+dy <- dygraph(firearm_background_chck_timeseries) %>%
+  dyOptions(labelsUTC = TRUE, fillGraph=TRUE, fillAlpha=0.4, drawGrid = TRUE, colors="#D8AE5A") %>%
+  dyRangeSelector() %>%
+  dyCrosshair(direction = "vertical") %>%
+  dyHighlight(highlightCircleSize = 5, highlightSeriesBackgroundAlpha = 0.2, hideOnMouseOut = FALSE)  %>%
+  dyRoller(rollPeriod = 1)
+
+dy
+
+
+
+
+
+
+library(tseries)
+library(forecast)
+firearm_ts <- ts(firearm_background_chck_p[,2],start = c(1998,11),end = c(2020,2),frequency = 12)
+
+firearm_ts_decom_m <- decompose(firearm_ts,type = "mult")
+firearm_ts_decom_a <- decompose(firearm_ts,type = "additive")
+
+plot (firearm_ts_decom_m)
+plot (firearm_ts_decom_a)
+
+
+
+stlRes <- stl(firearm_ts[,1], s.window = "periodic")
+stlRes
+
+stats:::summary.stl(stlRes)
+
+model <- hw(firearm_ts, initial = "optimal", h=24)
+plot(model, col="black",ylab="Background Checks Count", xlab="Years")
+accuracy(model) # calculate accuracy measures
+
+
+
+
+
+```
+
+
+
+```{r}
+
+#Choropleth
+firearm_background_chck
+
+
+firearm_background_chck_choropleth <- firearm_background_chck %>% group_by(state)%>%summarise(Total_Background_checks=sum(totals))
+
+
+
+firearm_background_chck_choropleth$state <- as.character(firearm_background_chck_choropleth$state)
+names(firearm_background_chck_choropleth)[1] <- "region"
+names(firearm_background_chck_choropleth)[2] <- "value"
+
+firearm_background_chck_choropleth$region<-tolower(str_trim(firearm_background_chck_choropleth$region))
+
+state_choropleth(firearm_background_chck_choropleth,
+                 title = "Firearm Background Check, USA",
+                 legend = "count",
+                 num_colors = 9
+                 )
+
+```
+
+
+
+ 
